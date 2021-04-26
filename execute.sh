@@ -1,0 +1,1 @@
+./program -n 4 -v 2 -c 3 -b 100 -t 1 -i main.c

@@ -14,8 +14,207 @@
 #include <semaphore.h> // sem_init(), sem_wait(), sem_post(), sem_destroy()
 #include <fcntl.h>     // open(), O_CREAT, O_RDWR, O_RDONLY
 #include <sys/mman.h>  // shm_open(), mmap(), PROT_READ, PROT_WRITE, MAP_SHARED, MAP_FAILED
+#include <stdarg.h>
+
+#define DEBUG 1
+#define SHARED_LINK "tmp_shared"
+
+//Macros
+#define errExit(msg)        \
+    do                      \
+    {                       \
+        perror(msg);        \
+        exit(EXIT_FAILURE); \
+    } while (0)
+
+// Function Prototypes
+void print_usage(void);
+void debug_printf(const char *format, ...);
+int validate_inputs(void);
+void print_inputs(void);
+void sig_handler(int sig_no);
+
+// Globals
+int _N = 0, opt_N = 0, // # of nurses
+    _V = 0, opt_V = 0, // # of vaccinators
+    _C = 0, opt_C = 0, // # of citizens
+    _B = 0, opt_B = 0, // tc+1 size of the buffer
+    _T = 0, opt_T = 0, // # of times each citizen must receive the 2 shots
+    shm_fd;            // shared memory file descriptor
+
+char _I[255]; // file path for the supplier input
+int opt_I;
+
+pid_t *pid;
+
+sig_atomic_t exit_requested = 0;
+
+// Shared data
+struct ClinicData
+{
+    int clinic_empty_slots;
+    int clinic_max_size;
+    int n_vaccinated;
+    int n_needs_vaccine;
+};
 
 int main(int argc, char *argv[])
 {
+    int option;
+    pid_t parent_pid = getpid();
+
+    // Input parsing & validation =======================
+    while ((option = getopt(argc, argv, "n:v:c:b:t:i:")) != -1)
+    { //get option from the getopt() method
+        switch (option)
+        {
+        case 'n':
+            opt_N = 1;
+            _N = atoi(optarg);
+            break;
+        case 'v':
+            opt_V = 1;
+            _V = atoi(optarg);
+            break;
+        case 'c':
+            opt_C = 1;
+            _C = atoi(optarg);
+            break;
+        case 'b':
+            opt_B = 1;
+            _B = atoi(optarg);
+            break;
+        case 't':
+            opt_T = 1;
+            _T = atoi(optarg);
+            break;
+        case 'i':
+            opt_I = 1;
+            snprintf(_I, 255, "%s", optarg);
+            break;
+        default:
+            print_usage();
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    for (; optind < argc; optind++) //when some extra arguments are passed
+        debug_printf("Given extra arguments: %s\n", argv[optind]);
+
+    if (!validate_inputs())
+    {
+        debug_printf("Missing parameters. Please read the usage information...\n");
+        print_usage();
+        exit(EXIT_FAILURE);
+    }
+
+    print_inputs();
+
+    setbuf(stdout, NULL); // Disable stdout buffering for library functions
+    // Register handlers before forking
+    signal(SIGINT, sig_handler);
+
+    //Create shared memory and initlize it========================================================
+    shm_unlink(SHARED_LINK);
+    shm_fd = shm_open(SHARED_LINK, O_CREAT | O_RDWR, S_IRUSR | S_IWUSR);
+
+    if (shm_fd == -1)
+        errExit("shm_open @main");
+    if (ftruncate(shm_fd, sizeof(struct ClinicData)) == -1)
+        errExit("ftruncate @main");
+
+    struct ClinicData *clinic = mmap(NULL, sizeof(struct ClinicData), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+
+    if (clinic == MAP_FAILED)
+        errExit("mmap @main");
+
+    clinic->n_needs_vaccine = 40;
+    clinic->clinic_empty_slots = 30;
+    clinic->n_vaccinated = 0;
+    clinic->clinic_max_size = 50;
+
+    /* Initialize semaphores */
+
+    //=======================================================Create shared memory and initlize it
+
+    // Create actor process=========================================
+    pid = malloc((_N + _V + _C + 1) * sizeof(pid_t *));
+    for (int i = 0; i < _N + _V + _C + 1; i++)
+    {
+        pid[i] = fork();
+        if (pid[i] == 0)
+            break;
+    }
+    // ======================================== Create actor process
+
+    // Parent process ====================================================
+    if (parent_pid == getpid())
+    {
+
+        // Wait for all the childeren=====================================
+        for (int i = 0; i < _N + _V + _C + 1 || exit_requested != 0; i++)
+        {
+            int status;
+            if (waitpid(pid[i], &status, 0) == -1)
+            {
+                errExit("waitpid");
+            }
+            debug_printf("waitpid%d\n", i);
+        }
+        // =====================================Wait for all the childeren
+
+        // Free resources
+        free(pid);
+        shm_unlink(SHARED_LINK);
+    }
+
     return 0;
+}
+
+void debug_printf(const char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+
+    if (DEBUG)
+        vprintf(format, args);
+
+    va_end(args);
+}
+
+void print_usage(void)
+{
+    printf("========================================\n");
+    printf("Usage:\n"
+           "./program [-n # of nurses] [-v # of vaccinators] [-c # of citizens] [-b  size of the buffer] [-t # of times each citizen must receive the 2 shots ] [-i input file path]\n");
+    printf("Constraints(all are integers): \n"
+           "n >= 2\n"
+           "v >= 2\n"
+           "c >= 3:\n"
+           "b >= tc+1\n"
+           "t >= 1\n");
+    printf("========================================\n");
+}
+
+int validate_inputs()
+{
+    return (opt_N && opt_V && opt_C && opt_B && opt_T && opt_I) &&
+           (_N >= 2 && _V >= 2 && _C >= 2 && _B >= _T * _C + 1 && _T >= 1);
+}
+
+void print_inputs(void)
+{
+    debug_printf("Inputs:\n"
+                 "# of nurses(n):    %d\n"
+                 "# of vaccinators(v): %d\n"
+                 "# of citizens(c):   %d\n"
+                 "size of the buffer(b):  %d\n"
+                 "2 shots(t): %d\n"
+                 "input file: %s\n",
+                 _N, _V, _C, _B, _T, _I);
+}
+
+void sig_handler(int sig_no)
+{
+    exit_requested = sig_no;
 }

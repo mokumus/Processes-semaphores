@@ -27,13 +27,6 @@
         exit(EXIT_FAILURE); \
     } while (0)
 
-// Function Prototypes
-void print_usage(void);
-void debug_printf(const char *format, ...);
-int validate_inputs(void);
-void print_inputs(void);
-void sig_handler(int sig_no);
-
 // Globals
 int _N = 0, opt_N = 0, // # of nurses
     _V = 0, opt_V = 0, // # of vaccinators
@@ -52,11 +45,27 @@ sig_atomic_t exit_requested = 0;
 // Shared data
 struct ClinicData
 {
+    sem_t sem_clinic_buffer;
+    int pfizer;
+    int sputnik;
+    
+
     int clinic_empty_slots;
     int clinic_max_size;
     int n_vaccinated;
     int n_needs_vaccine;
 };
+
+// Function Prototypes
+void print_usage(void);
+void debug_printf(const char *format, ...);
+int validate_inputs(void);
+void print_inputs(void);
+void sig_handler(int sig_no);
+
+void nurse(char *input_file, struct ClinicData *data, int id);
+void vaccinator(int id);
+void citizen(int id);
 
 int main(int argc, char *argv[])
 {
@@ -134,6 +143,8 @@ int main(int argc, char *argv[])
     clinic->clinic_max_size = 50;
 
     /* Initialize semaphores */
+    if (sem_init(&clinic->sem_clinic_buffer, 1, 1) == -1)
+        errExit("sem_init @main - sem_clinic_buffer");
 
     //=======================================================Create shared memory and initlize it
 
@@ -159,14 +170,37 @@ int main(int argc, char *argv[])
             {
                 errExit("waitpid");
             }
-            debug_printf("waitpid%d\n", i);
+            //debug_printf("waitpid%d\n", i);
         }
         // =====================================Wait for all the childeren
 
         // Free resources
         free(pid);
+        sem_destroy(&clinic->sem_clinic_buffer);
+
         shm_unlink(SHARED_LINK);
     }
+
+    // Child processes ===================================================
+    else
+    {
+        for (int i = 0; i < _N + _V + _C + 1; i++)
+        {
+            if (i >= 0 && i < _N && pid[i] == 0)
+            {
+                nurse(_I, clinic, i);
+            }
+            else if (i >= _N && i < _N + _V && pid[i] == 0)
+            {
+                vaccinator(i - _N);
+            }
+            else if (i >= _N + _V  && i < _N + _V + _C && pid[i] == 0)
+            {
+                citizen(i - _N - _V);
+            }
+        }
+    }
+    // ===================================================================
 
     return 0;
 }
@@ -217,4 +251,25 @@ void print_inputs(void)
 void sig_handler(int sig_no)
 {
     exit_requested = sig_no;
+}
+
+void nurse(char *input_file, struct ClinicData *data, int id){
+    int i_fd = open(input_file, O_RDONLY);
+    char c;
+
+    debug_printf("nurse%d\n", id);
+
+    if (i_fd == -1)
+        errExit("open @nurse()");
+
+    _exit(EXIT_SUCCESS);
+}
+
+void vaccinator(int id){
+    debug_printf("vacc%d\n", id);
+    _exit(EXIT_SUCCESS);
+}
+void citizen(int id){
+    debug_printf("cite%d\n", id);
+    _exit(EXIT_SUCCESS);
 }

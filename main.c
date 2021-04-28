@@ -320,6 +320,7 @@ void vaccinator(struct ClinicData *data, int id)
 {
     debug_printf("vacc%d\n", id);
 
+
     while (1)
     {
         s_wait(&data->sem_full, "vacc_wait");

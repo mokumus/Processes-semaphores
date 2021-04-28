@@ -46,12 +46,13 @@ sig_atomic_t exit_requested = 0;
 // Shared data
 struct ClinicData
 {
-    sem_t sem_clinic_buffer;
+    sem_t sem_shm_access;
+    sem_t sem_buffer_size;
+
     int pfizer;
     int sputnik;
 
     int clinic_empty_slots;
-    int buffer_max;
     int n_vaccinated;
     int n_needs_vaccine;
 
@@ -73,6 +74,7 @@ void citizen(int id);
 
 int s_wait(sem_t *sem, char *msg);
 int s_post(sem_t *sem, char *msg);
+int s_init(sem_t *sem, int val, char *msg);
 
 int main(int argc, char *argv[])
 {
@@ -147,12 +149,13 @@ int main(int argc, char *argv[])
     clinic->n_needs_vaccine = 40;
     clinic->clinic_empty_slots = 30;
     clinic->n_vaccinated = 0;
-    clinic->buffer_max = _B;
+    
 
     printf("Welcome to the GTU344 clinic. Number of citizen to vaccinate c=%d\n", _C);
     /* Initialize semaphores */
-    if (sem_init(&clinic->sem_clinic_buffer, 1, 1) == -1)
-        errExit("sem_init @main - sem_clinic_buffer");
+
+    s_init(&clinic->sem_shm_access, 1, "sem_init @main - sem_shm_access");
+    s_init(&clinic->sem_shm_access, _B, "sem_init @main - sem_shm_access");
 
     //=======================================================Create shared memory and initlize it
 
@@ -184,8 +187,8 @@ int main(int argc, char *argv[])
 
         // Free resources
         free(pid);
-        sem_destroy(&clinic->sem_clinic_buffer);
-
+        sem_destroy(&clinic->sem_shm_access);
+        sem_destroy(&clinic->sem_buffer_size);
         shm_unlink(SHARED_LINK);
     }
 
@@ -276,7 +279,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
     {
         do
         {
-            s_wait(&data->sem_clinic_buffer, "nurse_wait");
+            s_wait(&data->sem_shm_access, "nurse_wait");
 
             if (c == '1')
                 data->pfizer++;
@@ -284,7 +287,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
                 data->sputnik++;
 
             printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
-            s_post(&data->sem_clinic_buffer, "nurse_post");
+            s_post(&data->sem_shm_access, "nurse_post");
 
         } while (pread(i_fd, &c, 1, data->file_index++));
     }
@@ -321,6 +324,16 @@ int s_post(sem_t *sem, char *msg)
 {
     int ret;
     ret = sem_post(sem);
+    if (ret == -1)
+        errExit(msg);
+
+    return ret;
+}
+
+int s_init(sem_t *sem, int val, char *msg)
+{
+    int ret;
+    ret = sem_init(sem, 1, val);
     if (ret == -1)
         errExit(msg);
 

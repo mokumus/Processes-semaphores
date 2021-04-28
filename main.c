@@ -49,6 +49,7 @@ struct ClinicData
     sem_t sem_shm_access;
     sem_t sem_full;
     sem_t sem_empty;
+    sem_t sem_pair;
 
     int pfizer;
     int sputnik;
@@ -150,7 +151,6 @@ int main(int argc, char *argv[])
     clinic->n_needs_vaccine = 40;
     clinic->clinic_empty_slots = 30;
     clinic->n_vaccinated = 0;
-    
 
     printf("Welcome to the GTU344 clinic. Number of citizen to vaccinate c=%d\n", _C);
     /* Initialize semaphores */
@@ -158,6 +158,7 @@ int main(int argc, char *argv[])
     s_init(&clinic->sem_shm_access, 1, "sem_init @main - sem_shm_access");
     s_init(&clinic->sem_full, 0, "sem_init @main - sem_full");
     s_init(&clinic->sem_empty, _B, "sem_init @main - sem_empty");
+    s_init(&clinic->sem_pair, 0, "sem_init @main - sem_pair");
 
     //=======================================================Create shared memory and initlize it
 
@@ -192,6 +193,7 @@ int main(int argc, char *argv[])
         sem_destroy(&clinic->sem_shm_access);
         sem_destroy(&clinic->sem_full);
         sem_destroy(&clinic->sem_empty);
+        sem_destroy(&clinic->sem_pair);
         shm_unlink(SHARED_LINK);
     }
 
@@ -206,7 +208,7 @@ int main(int argc, char *argv[])
             }
             else if (i >= _N && i < _N + _V && pid[i] == 0)
             {
-                vaccinator(clinic,i - _N);
+                vaccinator(clinic, i - _N);
             }
             else if (i >= _N + _V && i < _N + _V + _C && pid[i] == 0)
             {
@@ -286,9 +288,18 @@ void nurse(char *input_file, struct ClinicData *data, int id)
             s_wait(&data->sem_shm_access, "nurse_wait");
 
             if (c == '1')
+            {
                 data->pfizer++;
+                if (data->sputnik > data->pfizer)
+                    s_post(&data->sem_pair, "nurse_post");
+            }
+
             if (c == '2')
+            {
                 data->sputnik++;
+                if (data->pfizer > data->sputnik)
+                    s_post(&data->sem_pair, "nurse_post");
+            }
 
             printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
             s_post(&data->sem_shm_access, "nurse_post");
@@ -309,16 +320,16 @@ void vaccinator(struct ClinicData *data, int id)
 {
     debug_printf("vacc%d\n", id);
 
-    while(1){
-        s_wait(&data->sem_full, "vacc_post");
-        s_wait(&data->sem_shm_access, "vacc_post");
+    while (1)
+    {
+        s_wait(&data->sem_full, "vacc_wait");
+        s_wait(&data->sem_shm_access, "vacc_wait");
+        s_wait(&data->sem_pair, "vacc_wait");
 
         data->pfizer--;
         data->sputnik--;
+        //https://shivammitra.com/c/producer-consumer-problem-in-c/#
     }
-
-
-
 
     _exit(EXIT_SUCCESS);
 }

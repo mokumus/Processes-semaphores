@@ -47,7 +47,8 @@ sig_atomic_t exit_requested = 0;
 struct ClinicData
 {
     sem_t sem_shm_access;
-    sem_t sem_buffer_size;
+    sem_t sem_full;
+    sem_t sem_empty;
 
     int pfizer;
     int sputnik;
@@ -155,7 +156,8 @@ int main(int argc, char *argv[])
     /* Initialize semaphores */
 
     s_init(&clinic->sem_shm_access, 1, "sem_init @main - sem_shm_access");
-    s_init(&clinic->sem_shm_access, _B, "sem_init @main - sem_shm_access");
+    s_init(&clinic->sem_full, 0, "sem_init @main - sem_full");
+    s_init(&clinic->sem_empty, _B, "sem_init @main - sem_empty");
 
     //=======================================================Create shared memory and initlize it
 
@@ -188,7 +190,8 @@ int main(int argc, char *argv[])
         // Free resources
         free(pid);
         sem_destroy(&clinic->sem_shm_access);
-        sem_destroy(&clinic->sem_buffer_size);
+        sem_destroy(&clinic->sem_full);
+        sem_destroy(&clinic->sem_empty);
         shm_unlink(SHARED_LINK);
     }
 
@@ -279,6 +282,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
     {
         do
         {
+            sem_wait(&data->sem_empty);
             s_wait(&data->sem_shm_access, "nurse_wait");
 
             if (c == '1')
@@ -288,6 +292,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
             printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
             s_post(&data->sem_shm_access, "nurse_post");
+            sem_post(&data->sem_full);
 
         } while (pread(i_fd, &c, 1, data->file_index++));
     }

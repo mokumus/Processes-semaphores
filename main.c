@@ -56,6 +56,8 @@ struct ClinicData
     int n_needs_vaccine;
 
     int file_index;
+
+    int nurses_done;
 };
 
 // Function Prototypes
@@ -68,6 +70,9 @@ void sig_handler(int sig_no);
 void nurse(char *input_file, struct ClinicData *data, int id);
 void vaccinator(int id);
 void citizen(int id);
+
+int s_wait(sem_t *sem, char *msg);
+int s_post(sem_t *sem, char *msg);
 
 int main(int argc, char *argv[])
 {
@@ -144,7 +149,6 @@ int main(int argc, char *argv[])
     clinic->n_vaccinated = 0;
     clinic->clinic_max_size = 50;
 
-
     printf("Welcome to the GTU344 clinic. Number of citizen to vaccinate c=%d\n", _C);
     /* Initialize semaphores */
     if (sem_init(&clinic->sem_clinic_buffer, 1, 1) == -1)
@@ -165,7 +169,7 @@ int main(int argc, char *argv[])
     // Parent process ====================================================
     if (parent_pid == getpid())
     {
-        
+
         // Wait for all the childeren=====================================
         for (int i = 0; i < _N + _V + _C + 1 || exit_requested != 0; i++)
         {
@@ -179,7 +183,6 @@ int main(int argc, char *argv[])
         // =====================================Wait for all the childeren
 
         // Free resources
-        printf("free\n");
         free(pid);
         sem_destroy(&clinic->sem_clinic_buffer);
 
@@ -203,7 +206,6 @@ int main(int argc, char *argv[])
             {
                 citizen(i - _N - _V);
             }
-            
         }
     }
     // ===================================================================
@@ -262,6 +264,7 @@ void sig_handler(int sig_no)
 void nurse(char *input_file, struct ClinicData *data, int id)
 {
     int i_fd = open(input_file, O_RDONLY);
+    
     char c;
 
     if (i_fd == -1)
@@ -269,12 +272,29 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
     debug_printf("nurse%d\n", id);
 
-    while (pread(i_fd, &c, 1, data->file_index++)){
-        printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has 1 vaccine1 and 0 vaccine2.\n", id, getpid(), c);
+    while (pread(i_fd, &c, 1, data->file_index++))
+    {
+
+    
+
+        s_wait(&data->sem_clinic_buffer, "nurse_wait");
+
+        if (c == '1')
+            data->pfizer++;
+        if (c == '2')
+            data->sputnik++;
+
+        printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
+        fflush(stdout);
+
+        s_post(&data->sem_clinic_buffer, "nurse_post");
     }
 
-    printf("nurse%d is done\n", id);
-    
+    if (data->nurses_done == 0)
+    {
+        data->nurses_done++;
+        printf("Nurses have carried all vaccines to the buffer, terminating.\n");
+    }
 
     _exit(EXIT_SUCCESS);
 }
@@ -288,4 +308,23 @@ void citizen(int id)
 {
     debug_printf("cite%d\n", id);
     _exit(EXIT_SUCCESS);
+}
+
+int s_wait(sem_t *sem, char *msg)
+{
+    int ret;
+    ret = sem_wait(sem);
+    if (ret == -1)
+        errExit(msg);
+
+    return ret;
+}
+int s_post(sem_t *sem, char *msg)
+{
+    int ret;
+    ret = sem_post(sem);
+    if (ret == -1)
+        errExit(msg);
+
+    return ret;
 }

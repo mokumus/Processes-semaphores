@@ -51,7 +51,7 @@ struct ClinicData
     int sputnik;
 
     int clinic_empty_slots;
-    int clinic_max_size;
+    int buffer_max;
     int n_vaccinated;
     int n_needs_vaccine;
 
@@ -147,7 +147,7 @@ int main(int argc, char *argv[])
     clinic->n_needs_vaccine = 40;
     clinic->clinic_empty_slots = 30;
     clinic->n_vaccinated = 0;
-    clinic->clinic_max_size = 50;
+    clinic->buffer_max = _B;
 
     printf("Welcome to the GTU344 clinic. Number of citizen to vaccinate c=%d\n", _C);
     /* Initialize semaphores */
@@ -272,7 +272,8 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
     debug_printf("nurse%d\n", id);
 
-    if(data->nurses_done == 0){
+    if (data->nurses_done == 0)
+    {
         do
         {
             s_wait(&data->sem_clinic_buffer, "nurse_wait");
@@ -282,11 +283,9 @@ void nurse(char *input_file, struct ClinicData *data, int id)
             if (c == '2')
                 data->sputnik++;
 
-            
             printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
-            
-
             s_post(&data->sem_clinic_buffer, "nurse_post");
+
         } while (pread(i_fd, &c, 1, data->file_index++));
     }
 

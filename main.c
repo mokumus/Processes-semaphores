@@ -324,10 +324,28 @@ void vaccinator(struct ClinicData *data, int id)
     {
         s_wait(&data->sem_full, "vacc_wait");
         s_wait(&data->sem_shm_access, "vacc_wait");
-        s_wait(&data->sem_pair, "vacc_wait");
 
+        printf("zurna\n");
         data->pfizer--;
         data->sputnik--;
+        data->n_vaccinated++;
+
+        if(data->n_vaccinated >= _C){
+            s_wait(&data->sem_pair, "vacc_wait");
+            s_post(&data->sem_shm_access, "vacc_post");
+            s_post(&data->sem_full, "vacc_post");
+            printf("vaccinator exiting, vaccinated : %d\n", data->n_vaccinated);
+            break;
+            
+        }
+
+        s_wait(&data->sem_pair, "vacc_wait");
+
+
+        s_post(&data->sem_shm_access, "vacc_post");
+        s_post(&data->sem_empty, "vacc_post");
+
+
         //https://shivammitra.com/c/producer-consumer-problem-in-c/#
     }
 

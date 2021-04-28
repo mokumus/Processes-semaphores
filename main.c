@@ -70,8 +70,8 @@ void print_inputs(void);
 void sig_handler(int sig_no);
 
 void nurse(char *input_file, struct ClinicData *data, int id);
-void vaccinator(int id);
-void citizen(int id);
+void vaccinator(struct ClinicData *data, int id);
+void citizen(struct ClinicData *data, int id);
 
 int s_wait(sem_t *sem, char *msg);
 int s_post(sem_t *sem, char *msg);
@@ -206,11 +206,11 @@ int main(int argc, char *argv[])
             }
             else if (i >= _N && i < _N + _V && pid[i] == 0)
             {
-                vaccinator(i - _N);
+                vaccinator(clinic,i - _N);
             }
             else if (i >= _N + _V && i < _N + _V + _C && pid[i] == 0)
             {
-                citizen(i - _N - _V);
+                citizen(clinic, i - _N - _V);
             }
         }
     }
@@ -282,7 +282,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
     {
         do
         {
-            sem_wait(&data->sem_empty);
+            s_wait(&data->sem_empty, "nurse_wait");
             s_wait(&data->sem_shm_access, "nurse_wait");
 
             if (c == '1')
@@ -292,7 +292,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
             printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
             s_post(&data->sem_shm_access, "nurse_post");
-            sem_post(&data->sem_full);
+            s_post(&data->sem_full, "nurse_post");
 
         } while (pread(i_fd, &c, 1, data->file_index++));
     }
@@ -305,12 +305,24 @@ void nurse(char *input_file, struct ClinicData *data, int id)
     _exit(EXIT_SUCCESS);
 }
 
-void vaccinator(int id)
+void vaccinator(struct ClinicData *data, int id)
 {
     debug_printf("vacc%d\n", id);
+
+    while(1){
+        s_wait(&data->sem_full, "vacc_post");
+        s_wait(&data->sem_shm_access, "vacc_post");
+
+        data->pfizer--;
+        data->sputnik--;
+    }
+
+
+
+
     _exit(EXIT_SUCCESS);
 }
-void citizen(int id)
+void citizen(struct ClinicData *data, int id)
 {
     debug_printf("cite%d\n", id);
     _exit(EXIT_SUCCESS);

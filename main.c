@@ -264,7 +264,7 @@ void sig_handler(int sig_no)
 void nurse(char *input_file, struct ClinicData *data, int id)
 {
     int i_fd = open(input_file, O_RDONLY);
-    
+
     char c;
 
     if (i_fd == -1)
@@ -272,29 +272,28 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
     debug_printf("nurse%d\n", id);
 
-    while (pread(i_fd, &c, 1, data->file_index++))
-    {
+    if(data->nurses_done == 0){
+        do
+        {
+            s_wait(&data->sem_clinic_buffer, "nurse_wait");
 
-    
+            if (c == '1')
+                data->pfizer++;
+            if (c == '2')
+                data->sputnik++;
 
-        s_wait(&data->sem_clinic_buffer, "nurse_wait");
+            
+            printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
+            
 
-        if (c == '1')
-            data->pfizer++;
-        if (c == '2')
-            data->sputnik++;
-
-        printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
-        fflush(stdout);
-
-        s_post(&data->sem_clinic_buffer, "nurse_post");
+            s_post(&data->sem_clinic_buffer, "nurse_post");
+        } while (pread(i_fd, &c, 1, data->file_index++));
     }
 
-    if (data->nurses_done == 0)
-    {
-        data->nurses_done++;
+    data->nurses_done++;
+
+    if (data->nurses_done == _N)
         printf("Nurses have carried all vaccines to the buffer, terminating.\n");
-    }
 
     _exit(EXIT_SUCCESS);
 }

@@ -61,6 +61,7 @@ struct ClinicData
     int file_index;
 
     int nurses_done;
+    int total_carried;
 };
 
 // Function Prototypes
@@ -272,7 +273,7 @@ void sig_handler(int sig_no)
 void nurse(char *input_file, struct ClinicData *data, int id)
 {
     int i_fd = open(input_file, O_RDONLY);
-    int total = 0;
+    
     char c;
 
     if (i_fd == -1)
@@ -280,8 +281,10 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
     debug_printf("nurse%d\n", id);
 
+    s_wait(&data->sem_shm_access, "nurse_wait");
     if (data->nurses_done == 0)
     {
+        s_post(&data->sem_shm_access, "nurse_post");
         do
         {
             s_wait(&data->sem_empty, "nurse_wait");
@@ -289,7 +292,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
             if (c == '1')
             {
-                total++;
+                data->total_carried++;
                 data->pfizer++;
                 if (data->sputnik >= data->pfizer)
                     s_post(&data->sem_pair, "nurse_post");
@@ -298,7 +301,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
             if (c == '2')
             {
                 data->sputnik++;
-                total++;
+                data->total_carried++;
                 if (data->pfizer >= data->sputnik)
                     s_post(&data->sem_pair, "nurse_post");
             }
@@ -316,7 +319,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
     data->nurses_done++;
 
     if (data->nurses_done == _N)
-        printf("Nurses have carried all vaccines to the buffer, terminating. %d\n",total);
+        printf("Nurses have carried all vaccines to the buffer, terminating. %d\n", data->total_carried);
 
     _exit(EXIT_SUCCESS);
 }
@@ -340,7 +343,6 @@ void vaccinator(struct ClinicData *data, int id)
         printf("vaccinated: %d \n", data->n_vaccinated);
         if (data->n_vaccinated >= _C * _T + 1)
         {
-
             s_post(&data->sem_shm_access, "vacc_post");
             s_post(&data->sem_full, "vacc_post");
             printf("vaccinator exiting, vaccinated : %d\n", n_vacc_by);

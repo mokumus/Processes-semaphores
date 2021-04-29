@@ -1,1 +1,1 @@
-./program -n 4 -v 2 -c 20 -b 100 -t 2 -i cold_storage.txt
+./program -n 20 -v 2 -c 20 -b 41 -t 2 -i cold_storage.txt

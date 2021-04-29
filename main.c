@@ -295,6 +295,9 @@ void nurse(char *input_file, struct ClinicData *data, int id)
             s_post(&data->sem_empty, "nurse_wait");
             s_post(&data->sem_shm_access, "nurse_post");
             data->nurses_done++;
+                if (data->nurses_done == _N)
+        printf("Nurses have carried all vaccines to the buffer, terminating. %d\n", data->total_carried);
+
             break;
         }
 
@@ -322,8 +325,6 @@ void nurse(char *input_file, struct ClinicData *data, int id)
         s_post(&data->sem_full, "nurse_post");
     }
 
-    if (data->nurses_done == _N)
-        printf("Nurses have carried all vaccines to the buffer, terminating. %d\n", data->total_carried);
 
     _exit(EXIT_SUCCESS);
 }
@@ -352,7 +353,7 @@ void vaccinator(struct ClinicData *data, int id)
         s_post(&data->sem_shm_access, "vacc_post");
         s_post(&data->sem_empty, "vacc_post");
     }
-    
+
     _exit(EXIT_SUCCESS);
 }
 void citizen(struct ClinicData *data, int id)

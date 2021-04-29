@@ -272,7 +272,7 @@ void sig_handler(int sig_no)
 void nurse(char *input_file, struct ClinicData *data, int id)
 {
     int i_fd = open(input_file, O_RDONLY);
-
+    int total = 0;
     char c;
 
     if (i_fd == -1)
@@ -289,6 +289,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
             if (c == '1')
             {
+                total++;
                 data->pfizer++;
                 if (data->sputnik >= data->pfizer)
                     s_post(&data->sem_pair, "nurse_post");
@@ -297,13 +298,17 @@ void nurse(char *input_file, struct ClinicData *data, int id)
             if (c == '2')
             {
                 data->sputnik++;
+                total++;
                 if (data->pfizer >= data->sputnik)
                     s_post(&data->sem_pair, "nurse_post");
             }
 
+            
+
             printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
-            s_post(&data->sem_shm_access, "nurse_post");
             s_post(&data->sem_full, "nurse_post");
+            s_post(&data->sem_shm_access, "nurse_post");
+
 
         } while (pread(i_fd, &c, 1, data->file_index++));
     }
@@ -311,7 +316,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
     data->nurses_done++;
 
     if (data->nurses_done == _N)
-        printf("Nurses have carried all vaccines to the buffer, terminating.\n");
+        printf("Nurses have carried all vaccines to the buffer, terminating. %d\n",total);
 
     _exit(EXIT_SUCCESS);
 }
@@ -332,7 +337,8 @@ void vaccinator(struct ClinicData *data, int id)
         data->n_vaccinated++;
         n_vacc_by++;
 
-        if (data->n_vaccinated >= _C*_T)
+        printf("vaccinated: %d \n", data->n_vaccinated);
+        if (data->n_vaccinated >= _C * _T + 1)
         {
 
             s_post(&data->sem_shm_access, "vacc_post");
@@ -341,10 +347,10 @@ void vaccinator(struct ClinicData *data, int id)
             break;
         }
 
-        s_post(&data->sem_shm_access, "vacc_post");
         s_post(&data->sem_empty, "vacc_post");
+        s_post(&data->sem_empty, "vacc_post");
+        s_post(&data->sem_shm_access, "vacc_post");
 
-        //https://shivammitra.com/c/producer-consumer-problem-in-c/#
     }
 
     _exit(EXIT_SUCCESS);

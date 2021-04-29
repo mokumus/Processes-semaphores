@@ -290,14 +290,14 @@ void nurse(char *input_file, struct ClinicData *data, int id)
             if (c == '1')
             {
                 data->pfizer++;
-                if (data->sputnik > data->pfizer)
+                if (data->sputnik >= data->pfizer)
                     s_post(&data->sem_pair, "nurse_post");
             }
 
             if (c == '2')
             {
                 data->sputnik++;
-                if (data->pfizer > data->sputnik)
+                if (data->pfizer >= data->sputnik)
                     s_post(&data->sem_pair, "nurse_post");
             }
 
@@ -318,21 +318,22 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
 void vaccinator(struct ClinicData *data, int id)
 {
-    debug_printf("vacc%d\n", id);
+    printf("vacc%d\n", id);
 
 
     while (1)
     {
         s_wait(&data->sem_full, "vacc_wait");
+        s_wait(&data->sem_pair, "vacc_wait");
         s_wait(&data->sem_shm_access, "vacc_wait");
-
-        printf("zurna\n");
+        
+        printf("Vaccinator %d (pid=%d) is inviting citizen pid=%d to the clinic\n",id,getpid(),getpid());
         data->pfizer--;
         data->sputnik--;
         data->n_vaccinated++;
 
         if(data->n_vaccinated >= _C){
-            s_wait(&data->sem_pair, "vacc_wait");
+            
             s_post(&data->sem_shm_access, "vacc_post");
             s_post(&data->sem_full, "vacc_post");
             printf("vaccinator exiting, vaccinated : %d\n", data->n_vaccinated);
@@ -340,7 +341,8 @@ void vaccinator(struct ClinicData *data, int id)
             
         }
 
-        s_wait(&data->sem_pair, "vacc_wait");
+
+
 
 
         s_post(&data->sem_shm_access, "vacc_post");

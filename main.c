@@ -50,6 +50,7 @@ struct ClinicData
     sem_t sem_full;
     sem_t sem_empty;
     sem_t sem_pair;
+    sem_t sem_stored;
 
     int pfizer;
     int sputnik;
@@ -160,6 +161,7 @@ int main(int argc, char *argv[])
     s_init(&clinic->sem_full, 0, "sem_init @main - sem_full");
     s_init(&clinic->sem_empty, _B, "sem_init @main - sem_empty");
     s_init(&clinic->sem_pair, 0, "sem_init @main - sem_pair");
+    s_init(&clinic->sem_stored, 0, "sem_init @main - sem_stored");
 
     //=======================================================Create shared memory and initlize it
 
@@ -195,6 +197,7 @@ int main(int argc, char *argv[])
         sem_destroy(&clinic->sem_full);
         sem_destroy(&clinic->sem_empty);
         sem_destroy(&clinic->sem_pair);
+        sem_destroy(&clinic->sem_stored);
         shm_unlink(SHARED_LINK);
     }
 
@@ -273,7 +276,7 @@ void sig_handler(int sig_no)
 void nurse(char *input_file, struct ClinicData *data, int id)
 {
     int i_fd = open(input_file, O_RDONLY);
-    
+
     char c;
 
     if (i_fd == -1)
@@ -281,42 +284,43 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
     debug_printf("nurse%d\n", id);
 
-    s_wait(&data->sem_shm_access, "nurse_wait");
-    if (data->nurses_done == 0)
+    while (1)
     {
-        s_post(&data->sem_shm_access, "nurse_post");
-        do
+        s_wait(&data->sem_empty, "nurse_wait");
+        s_wait(&data->sem_shm_access, "nurse_wait");
+
+        if (data->total_carried >= _T * _C)
         {
-            s_wait(&data->sem_empty, "nurse_wait");
-            s_wait(&data->sem_shm_access, "nurse_wait");
-
-            if (c == '1')
-            {
-                data->total_carried++;
-                data->pfizer++;
-                if (data->sputnik >= data->pfizer)
-                    s_post(&data->sem_pair, "nurse_post");
-            }
-
-            if (c == '2')
-            {
-                data->sputnik++;
-                data->total_carried++;
-                if (data->pfizer >= data->sputnik)
-                    s_post(&data->sem_pair, "nurse_post");
-            }
-
-            
-
-            printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
             s_post(&data->sem_full, "nurse_post");
+            s_post(&data->sem_empty, "nurse_wait");
             s_post(&data->sem_shm_access, "nurse_post");
+            data->nurses_done++;
+            break;
+        }
 
+        pread(i_fd, &c, 1, data->file_index++);
 
-        } while (pread(i_fd, &c, 1, data->file_index++));
+        if (c == '1')
+        {
+            data->pfizer++;
+            if (data->sputnik > data->pfizer)
+                s_post(&data->sem_pair, "nurse_post");
+        }
+
+        if (c == '2')
+        {
+            data->sputnik++;
+            if (data->pfizer > data->sputnik)
+                s_post(&data->sem_pair, "nurse_post");
+        }
+
+        data->total_carried++;
+
+        printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
+
+        s_post(&data->sem_shm_access, "nurse_post");
+        s_post(&data->sem_full, "nurse_post");
     }
-
-    data->nurses_done++;
 
     if (data->nurses_done == _N)
         printf("Nurses have carried all vaccines to the buffer, terminating. %d\n", data->total_carried);
@@ -326,35 +330,29 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
 void vaccinator(struct ClinicData *data, int id)
 {
-    int n_vacc_by = 0;
+    debug_printf("vacc%d\n", id);
 
     while (1)
     {
         s_wait(&data->sem_full, "vacc_wait");
-        s_wait(&data->sem_pair, "vacc_wait");
         s_wait(&data->sem_shm_access, "vacc_wait");
 
-        printf("Vaccinator %d (pid=%d) is inviting citizen pid=%d to the clinic\n", id, getpid(), getpid());
-        data->pfizer--;
-        data->sputnik--;
-        data->n_vaccinated++;
-        n_vacc_by++;
-
-        printf("vaccinated: %d \n", data->n_vaccinated);
-        if (data->n_vaccinated >= _C * _T + 1)
+        if (data->n_vaccinated >= _T*_C)
         {
-            s_post(&data->sem_shm_access, "vacc_post");
             s_post(&data->sem_full, "vacc_post");
-            printf("vaccinator exiting, vaccinated : %d\n", n_vacc_by);
+            s_post(&data->sem_shm_access, "vacc_post");
+            printf("vaccinator exiting, vaccinated : %d\n", data->n_vaccinated);
             break;
         }
 
-        s_post(&data->sem_empty, "vacc_post");
-        s_post(&data->sem_empty, "vacc_post");
+        data->pfizer--;
+        data->sputnik--;
+        data->n_vaccinated++;
+
         s_post(&data->sem_shm_access, "vacc_post");
-
+        s_post(&data->sem_empty, "vacc_post");
     }
-
+    
     _exit(EXIT_SUCCESS);
 }
 void citizen(struct ClinicData *data, int id)

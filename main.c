@@ -318,36 +318,31 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
 void vaccinator(struct ClinicData *data, int id)
 {
-    printf("vacc%d\n", id);
-
+    int n_vacc_by = 0;
 
     while (1)
     {
         s_wait(&data->sem_full, "vacc_wait");
         s_wait(&data->sem_pair, "vacc_wait");
         s_wait(&data->sem_shm_access, "vacc_wait");
-        
-        printf("Vaccinator %d (pid=%d) is inviting citizen pid=%d to the clinic\n",id,getpid(),getpid());
+
+        printf("Vaccinator %d (pid=%d) is inviting citizen pid=%d to the clinic\n", id, getpid(), getpid());
         data->pfizer--;
         data->sputnik--;
         data->n_vaccinated++;
+        n_vacc_by++;
 
-        if(data->n_vaccinated >= _C){
-            
+        if (data->n_vaccinated >= _C*_T)
+        {
+
             s_post(&data->sem_shm_access, "vacc_post");
             s_post(&data->sem_full, "vacc_post");
-            printf("vaccinator exiting, vaccinated : %d\n", data->n_vaccinated);
+            printf("vaccinator exiting, vaccinated : %d\n", n_vacc_by);
             break;
-            
         }
-
-
-
-
 
         s_post(&data->sem_shm_access, "vacc_post");
         s_post(&data->sem_empty, "vacc_post");
-
 
         //https://shivammitra.com/c/producer-consumer-problem-in-c/#
     }

@@ -50,7 +50,6 @@ struct ClinicData
     sem_t sem_full;
     sem_t sem_empty;
     sem_t sem_pair;
-    sem_t sem_stored;
 
     int pfizer;
     int sputnik;
@@ -161,12 +160,17 @@ int main(int argc, char *argv[])
     s_init(&clinic->sem_full, 0, "sem_init @main - sem_full");
     s_init(&clinic->sem_empty, _B, "sem_init @main - sem_empty");
     s_init(&clinic->sem_pair, 0, "sem_init @main - sem_pair");
-    s_init(&clinic->sem_stored, 0, "sem_init @main - sem_stored");
+    
 
     //=======================================================Create shared memory and initlize it
 
     // Create actor process=========================================
     pid = malloc((_N + _V + _C + 1) * sizeof(pid_t));
+
+    for(int i=0; i<_N + _V + _C + 1; i++){
+        pid[i] = 0;
+    }
+    
     for (int i = 0; i < _N + _V + _C + 1; i++)
     {
         pid[i] = fork();
@@ -197,7 +201,6 @@ int main(int argc, char *argv[])
         sem_destroy(&clinic->sem_full);
         sem_destroy(&clinic->sem_empty);
         sem_destroy(&clinic->sem_pair);
-        sem_destroy(&clinic->sem_stored);
         shm_unlink(SHARED_LINK);
     }
 

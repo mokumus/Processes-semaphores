@@ -166,7 +166,7 @@ int main(int argc, char *argv[])
     //=======================================================Create shared memory and initlize it
 
     // Create actor process=========================================
-    pid = malloc((_N + _V + _C + 1) * sizeof(pid_t *));
+    pid = malloc((_N + _V + _C + 1) * sizeof(pid_t));
     for (int i = 0; i < _N + _V + _C + 1; i++)
     {
         pid[i] = fork();
@@ -323,6 +323,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
         s_post(&data->sem_full, "nurse_post");
     }
 
+    free(pid);
     _exit(EXIT_SUCCESS);
 }
 
@@ -348,11 +349,13 @@ void vaccinator(struct ClinicData *data, int id)
         s_post(&data->sem_empty, "vacc_post");
     }
 
+    free(pid);
     _exit(EXIT_SUCCESS);
 }
 void citizen(struct ClinicData *data, int id)
 {
     debug_printf("cite%d\n", id);
+    free(pid);
     _exit(EXIT_SUCCESS);
 }
 

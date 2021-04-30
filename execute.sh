@@ -1,1 +1,1 @@
-./program -n 20 -v 10 -c 40 -b 81 -t 2 -i cold_storage.txt
+valgrind --leak-check=full --show-leak-kinds=all ./program -n 20 -v 10 -c 40 -b 81 -t 2 -i cold_storage.txt

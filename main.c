@@ -282,9 +282,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
     if (i_fd == -1)
         errExit("open @nurse()");
 
-    debug_printf("nurse%d\n", id);
-
-    while (1)
+    while (exit_requested == 0)
     {
         s_wait(&data->sem_empty, "nurse_wait");
         s_wait(&data->sem_shm_access, "nurse_wait");
@@ -295,8 +293,8 @@ void nurse(char *input_file, struct ClinicData *data, int id)
             s_post(&data->sem_empty, "nurse_wait");
             s_post(&data->sem_shm_access, "nurse_post");
             data->nurses_done++;
-                if (data->nurses_done == _N)
-        printf("Nurses have carried all vaccines to the buffer, terminating. %d\n", data->total_carried);
+            if (data->nurses_done == _N)
+                printf("Nurses have carried all vaccines to the buffer, terminating. %d\n", data->total_carried);
 
             break;
         }
@@ -325,24 +323,20 @@ void nurse(char *input_file, struct ClinicData *data, int id)
         s_post(&data->sem_full, "nurse_post");
     }
 
-
     _exit(EXIT_SUCCESS);
 }
 
 void vaccinator(struct ClinicData *data, int id)
 {
-    debug_printf("vacc%d\n", id);
-
-    while (1)
+    while (exit_requested == 0)
     {
         s_wait(&data->sem_full, "vacc_wait");
         s_wait(&data->sem_shm_access, "vacc_wait");
 
-        if (data->n_vaccinated >= _T*_C)
+        if (data->n_vaccinated >= _T * _C)
         {
             s_post(&data->sem_full, "vacc_post");
             s_post(&data->sem_shm_access, "vacc_post");
-            printf("vaccinator exiting, vaccinated : %d\n", data->n_vaccinated);
             break;
         }
 

@@ -49,7 +49,8 @@ struct ClinicData
     sem_t sem_shm_access;
     sem_t sem_full;
     sem_t sem_empty;
-    sem_t sem_pair;
+    sem_t sem_vacc_available;
+    sem_t sem_vacc_mutex;
 
     int pfizer;
     int sputnik;
@@ -62,6 +63,10 @@ struct ClinicData
 
     int nurses_done;
     int total_carried;
+
+    int citizens_to_vaccinate;
+    int vaccinators_done;
+    int vacc_grabbed;
 };
 
 // Function Prototypes
@@ -75,9 +80,9 @@ void nurse(char *input_file, struct ClinicData *data, int id);
 void vaccinator(struct ClinicData *data, int id);
 void citizen(struct ClinicData *data, int id);
 
-int s_wait(sem_t *sem, char *msg);
-int s_post(sem_t *sem, char *msg);
-int s_init(sem_t *sem, int val, char *msg);
+int s_wait(sem_t *sem);
+int s_post(sem_t *sem);
+int s_init(sem_t *sem, int val);
 
 int main(int argc, char *argv[])
 {
@@ -152,25 +157,26 @@ int main(int argc, char *argv[])
     clinic->n_needs_vaccine = 40;
     clinic->clinic_empty_slots = 30;
     clinic->n_vaccinated = 0;
+    clinic->citizens_to_vaccinate = _C;
 
     printf("Welcome to the GTU344 clinic. Number of citizen to vaccinate c=%d\n", _C);
     /* Initialize semaphores */
 
-    s_init(&clinic->sem_shm_access, 1, "sem_init @main - sem_shm_access");
-    s_init(&clinic->sem_full, 0, "sem_init @main - sem_full");
-    s_init(&clinic->sem_empty, _B, "sem_init @main - sem_empty");
-    s_init(&clinic->sem_pair, 0, "sem_init @main - sem_pair");
-    
-
+    s_init(&clinic->sem_shm_access, 1);
+    s_init(&clinic->sem_full, 0);
+    s_init(&clinic->sem_empty, _B);
+    s_init(&clinic->sem_vacc_available, 0);
+    s_init(&clinic->sem_vacc_mutex, 0);
     //=======================================================Create shared memory and initlize it
 
     // Create actor process=========================================
     pid = malloc((_N + _V + _C + 1) * sizeof(pid_t));
 
-    for(int i=0; i<_N + _V + _C + 1; i++){
+    for (int i = 0; i < _N + _V + _C + 1; i++)
+    {
         pid[i] = 0;
     }
-    
+
     for (int i = 0; i < _N + _V + _C + 1; i++)
     {
         pid[i] = fork();
@@ -200,7 +206,8 @@ int main(int argc, char *argv[])
         sem_destroy(&clinic->sem_shm_access);
         sem_destroy(&clinic->sem_full);
         sem_destroy(&clinic->sem_empty);
-        sem_destroy(&clinic->sem_pair);
+        sem_destroy(&clinic->sem_vacc_available);
+        sem_destroy(&clinic->sem_vacc_mutex);
         shm_unlink(SHARED_LINK);
     }
 
@@ -282,22 +289,28 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
     char c;
 
+    setbuf(stdout, NULL);
+
     if (i_fd == -1)
         errExit("open @nurse()");
 
     while (exit_requested == 0)
     {
-        s_wait(&data->sem_empty, "nurse_wait");
-        s_wait(&data->sem_shm_access, "nurse_wait");
 
-        if (data->total_carried >= _T * _C)
+        s_wait(&data->sem_empty);
+        s_wait(&data->sem_shm_access);
+
+        if (data->total_carried >= _T * _C * 2)
         {
-            s_post(&data->sem_full, "nurse_post");
-            s_post(&data->sem_empty, "nurse_wait");
-            s_post(&data->sem_shm_access, "nurse_post");
             data->nurses_done++;
-            if (data->nurses_done == _N)
-                printf("Nurses have carried all vaccines to the buffer, terminating. %d\n", data->total_carried);
+            printf("Nurse %d done\n", id);
+
+            if (data->nurses_done >= _N)
+                printf("All nurses are done, carried %d vaccines\n", data->total_carried);
+
+            s_post(&data->sem_full);
+            s_post(&data->sem_empty);
+            s_post(&data->sem_shm_access);
 
             break;
         }
@@ -305,25 +318,18 @@ void nurse(char *input_file, struct ClinicData *data, int id)
         pread(i_fd, &c, 1, data->file_index++);
 
         if (c == '1')
-        {
             data->pfizer++;
-            if (data->sputnik > data->pfizer)
-                s_post(&data->sem_pair, "nurse_post");
-        }
 
         if (c == '2')
-        {
             data->sputnik++;
-            if (data->pfizer > data->sputnik)
-                s_post(&data->sem_pair, "nurse_post");
-        }
-
-        data->total_carried++;
 
         printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
 
-        s_post(&data->sem_shm_access, "nurse_post");
-        s_post(&data->sem_full, "nurse_post");
+        data->total_carried++;
+        s_post(&data->sem_shm_access);
+
+        if ((c == '1' && data->pfizer <= data->sputnik) || (c == '2' && data->sputnik <= data->pfizer))
+            s_post(&data->sem_full);
     }
 
     free(pid);
@@ -334,22 +340,27 @@ void vaccinator(struct ClinicData *data, int id)
 {
     while (exit_requested == 0)
     {
-        s_wait(&data->sem_full, "vacc_wait");
-        s_wait(&data->sem_shm_access, "vacc_wait");
+        s_wait(&data->sem_full);
+        s_wait(&data->sem_shm_access);
 
-        if (data->n_vaccinated >= _T * _C)
+        if (data->vacc_grabbed >= _T * _C * 2)
         {
-            s_post(&data->sem_full, "vacc_post");
-            s_post(&data->sem_shm_access, "vacc_post");
+            s_post(&data->sem_full);
+            s_post(&data->sem_shm_access);
+            printf("Vaccinator %d exitting, total grabbed: %d\n", id, data->vacc_grabbed);
             break;
         }
 
         data->pfizer--;
         data->sputnik--;
-        data->n_vaccinated++;
+        data->vacc_grabbed += 2;
+        s_post(&data->sem_vacc_available);
+        s_wait(&data->sem_vacc_mutex);
 
-        s_post(&data->sem_shm_access, "vacc_post");
-        s_post(&data->sem_empty, "vacc_post");
+        //printf("Vaccinator %d, Vacc1: %d, Vacc2: %d\n", id, data->pfizer, data->sputnik);
+
+        s_post(&data->sem_shm_access);
+        s_post(&data->sem_empty);
     }
 
     free(pid);
@@ -357,36 +368,51 @@ void vaccinator(struct ClinicData *data, int id)
 }
 void citizen(struct ClinicData *data, int id)
 {
-    debug_printf("cite%d\n", id);
+    int dose_taken = 0;
+    while (exit_requested == 0)
+    {
+        s_wait(&data->sem_vacc_available);
+        dose_taken++;
+        if (dose_taken == _T)
+        {
+            data->citizens_to_vaccinate--;
+            printf("Citizen %d (pid=%d) is vaccinated for the %d. time: the clinic has %d vaccine1 and %d vaccine2. The citizen is leaving. Remaining citizens to vaccinate: %d\n", id, getpid(), dose_taken, data->pfizer, data->sputnik, data->citizens_to_vaccinate);
+            s_post(&data->sem_vacc_mutex);
+            break;
+        }
+        printf("Citizen %d (pid=%d) is vaccinated for the %d. time: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), dose_taken, data->pfizer, data->sputnik);
+        s_post(&data->sem_vacc_mutex);
+    }
+
     free(pid);
     _exit(EXIT_SUCCESS);
 }
 
-int s_wait(sem_t *sem, char *msg)
+int s_wait(sem_t *sem)
 {
     int ret;
     ret = sem_wait(sem);
     if (ret == -1)
-        errExit(msg);
+        errExit("s_wait");
 
     return ret;
 }
-int s_post(sem_t *sem, char *msg)
+int s_post(sem_t *sem)
 {
     int ret;
     ret = sem_post(sem);
     if (ret == -1)
-        errExit(msg);
+        errExit("s_post");
 
     return ret;
 }
 
-int s_init(sem_t *sem, int val, char *msg)
+int s_init(sem_t *sem, int val)
 {
     int ret;
     ret = sem_init(sem, 1, val);
     if (ret == -1)
-        errExit(msg);
+        errExit("s_init");
 
     return ret;
 }

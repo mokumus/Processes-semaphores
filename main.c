@@ -55,10 +55,6 @@ struct ClinicData
     int pfizer;
     int sputnik;
 
-    int clinic_empty_slots;
-    int n_vaccinated;
-    int n_needs_vaccine;
-
     int file_index;
 
     int nurses_done;
@@ -67,6 +63,8 @@ struct ClinicData
     int citizens_to_vaccinate;
     int vaccinators_done;
     int vacc_grabbed;
+
+    char results[256][256];
 };
 
 // Function Prototypes
@@ -154,9 +152,6 @@ int main(int argc, char *argv[])
     if (clinic == MAP_FAILED)
         errExit("mmap @main");
 
-    clinic->n_needs_vaccine = 40;
-    clinic->clinic_empty_slots = 30;
-    clinic->n_vaccinated = 0;
     clinic->citizens_to_vaccinate = _C;
 
     printf("Welcome to the GTU344 clinic. Number of citizen to vaccinate c=%d\n", _C);
@@ -180,8 +175,11 @@ int main(int argc, char *argv[])
     for (int i = 0; i < _N + _V + _C + 1; i++)
     {
         pid[i] = fork();
-        if (pid[i] == 0)
+        if (pid[i] == 0){
+            setbuf(stdout, NULL);
             break;
+        }
+            
     }
     // ======================================== Create actor process
 
@@ -200,6 +198,13 @@ int main(int argc, char *argv[])
             //debug_printf("waitpid%d\n", i);
         }
         // =====================================Wait for all the childeren
+
+        printf("All citizens have been vaccinated.\n");
+
+        for(int i = 0 ; i < _V; i++){
+            printf("%s", clinic->results[i]);
+        }
+
 
         // Free resources
         free(pid);
@@ -286,10 +291,10 @@ void sig_handler(int sig_no)
 void nurse(char *input_file, struct ClinicData *data, int id)
 {
     int i_fd = open(input_file, O_RDONLY);
-
+    int carried = 0;
     char c;
 
-    setbuf(stdout, NULL);
+    
 
     if (i_fd == -1)
         errExit("open @nurse()");
@@ -303,10 +308,10 @@ void nurse(char *input_file, struct ClinicData *data, int id)
         if (data->total_carried >= _T * _C * 2)
         {
             data->nurses_done++;
-            printf("Nurse %d done\n", id);
+            printf("Nurse %d done, carried %d vaccines.\n", id, carried);
 
             if (data->nurses_done >= _N)
-                printf("All nurses are done, carried %d vaccines\n", data->total_carried);
+                printf("All nurses are done, carried total of %d vaccines to the clinic.\n", data->total_carried);
 
             s_post(&data->sem_full);
             s_post(&data->sem_empty);
@@ -316,7 +321,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
         }
 
         pread(i_fd, &c, 1, data->file_index++);
-
+        carried++;
         if (c == '1')
             data->pfizer++;
 
@@ -326,10 +331,12 @@ void nurse(char *input_file, struct ClinicData *data, int id)
         printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
 
         data->total_carried++;
-        s_post(&data->sem_shm_access);
+        
 
         if ((c == '1' && data->pfizer <= data->sputnik) || (c == '2' && data->sputnik <= data->pfizer))
             s_post(&data->sem_full);
+
+        s_post(&data->sem_shm_access);
     }
 
     free(pid);
@@ -338,6 +345,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
 
 void vaccinator(struct ClinicData *data, int id)
 {
+    int doses = 0;
     while (exit_requested == 0)
     {
         s_wait(&data->sem_full);
@@ -347,20 +355,21 @@ void vaccinator(struct ClinicData *data, int id)
         {
             s_post(&data->sem_full);
             s_post(&data->sem_shm_access);
-            printf("Vaccinator %d exitting, total grabbed: %d\n", id, data->vacc_grabbed);
+            char buffer[256];
+            snprintf(buffer, 256, "Vaccinator %d (pid=%d) vaccinated %d doses.", id, getpid(), doses);
+            strcpy(data->results[id], buffer);
             break;
         }
 
-        data->pfizer--;
-        data->sputnik--;
+        doses++;
         data->vacc_grabbed += 2;
+        printf("Vaccinator %d (pid=%d) is inviting a citizen to the clinic.\n", id, getpid());
         s_post(&data->sem_vacc_available);
-        s_wait(&data->sem_vacc_mutex);
+        //s_wait(&data->sem_vacc_mutex);
 
-        //printf("Vaccinator %d, Vacc1: %d, Vacc2: %d\n", id, data->pfizer, data->sputnik);
 
         s_post(&data->sem_shm_access);
-        s_post(&data->sem_empty);
+        
     }
 
     free(pid);
@@ -372,16 +381,21 @@ void citizen(struct ClinicData *data, int id)
     while (exit_requested == 0)
     {
         s_wait(&data->sem_vacc_available);
+        s_wait(&data->sem_shm_access);
+        data->pfizer--;
+        data->sputnik--;
+        s_post(&data->sem_shm_access);
+        s_post(&data->sem_empty);
         dose_taken++;
         if (dose_taken == _T)
         {
             data->citizens_to_vaccinate--;
             printf("Citizen %d (pid=%d) is vaccinated for the %d. time: the clinic has %d vaccine1 and %d vaccine2. The citizen is leaving. Remaining citizens to vaccinate: %d\n", id, getpid(), dose_taken, data->pfizer, data->sputnik, data->citizens_to_vaccinate);
-            s_post(&data->sem_vacc_mutex);
+            //s_post(&data->sem_vacc_mutex);
             break;
         }
         printf("Citizen %d (pid=%d) is vaccinated for the %d. time: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), dose_taken, data->pfizer, data->sputnik);
-        s_post(&data->sem_vacc_mutex);
+        //s_post(&data->sem_vacc_mutex);
     }
 
     free(pid);

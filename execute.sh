@@ -1,1 +1,1 @@
-./program -n 4 -v 5 -c 40 -b 81 -t 2 -i cold_storage.txt > a.txt
+./program -n 4 -v 5 -c 40 -b 161 -t 4 -i cold_storage.txt

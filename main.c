@@ -20,6 +20,24 @@
 #define DEBUG 0
 #define SHARED_LINK "tmp_shared"
 
+#define RESET   "\033[0m"
+#define BLACK   "\033[30m"      /* Black */
+#define RED     "\033[31m"      /* Red */
+#define GREEN   "\033[32m"      /* Green */
+#define YELLOW  "\033[33m"      /* Yellow */
+#define BLUE    "\033[34m"      /* Blue */
+#define MAGENTA "\033[35m"      /* Magenta */
+#define CYAN    "\033[36m"      /* Cyan */
+#define WHITE   "\033[37m"      /* White */
+#define BOLDBLACK   "\033[1m\033[30m"      /* Bold Black */
+#define BOLDRED     "\033[1m\033[31m"      /* Bold Red */
+#define BOLDGREEN   "\033[1m\033[32m"      /* Bold Green */
+#define BOLDYELLOW  "\033[1m\033[33m"      /* Bold Yellow */
+#define BOLDBLUE    "\033[1m\033[34m"      /* Bold Blue */
+#define BOLDMAGENTA "\033[1m\033[35m"      /* Bold Magenta */
+#define BOLDCYAN    "\033[1m\033[36m"      /* Bold Cyan */
+#define BOLDWHITE   "\033[1m\033[37m"      /* Bold White */
+
 //Macros
 #define errExit(msg)        \
     do                      \
@@ -50,7 +68,6 @@ struct ClinicData
     sem_t sem_full;
     sem_t sem_empty;
     sem_t sem_vacc_available;
-    sem_t sem_vacc_mutex;
 
     int pfizer;
     int sputnik;
@@ -64,7 +81,7 @@ struct ClinicData
     int vaccinators_done;
     int vacc_grabbed;
 
-    char results[256][256];
+    char results[1024][60];
 };
 
 // Function Prototypes
@@ -154,14 +171,13 @@ int main(int argc, char *argv[])
 
     clinic->citizens_to_vaccinate = _C;
 
-    printf("Welcome to the GTU344 clinic. Number of citizen to vaccinate c=%d\n", _C);
+    printf(BOLDYELLOW   "Welcome to the GTU344 clinic. Number of citizen to vaccinate c=%d\n" RESET, _C);
     /* Initialize semaphores */
 
     s_init(&clinic->sem_shm_access, 1);
     s_init(&clinic->sem_full, 0);
     s_init(&clinic->sem_empty, _B);
     s_init(&clinic->sem_vacc_available, 0);
-    s_init(&clinic->sem_vacc_mutex, 0);
     //=======================================================Create shared memory and initlize it
 
     // Create actor process=========================================
@@ -169,10 +185,10 @@ int main(int argc, char *argv[])
 
     for (int i = 0; i < _N + _V + _C + 1; i++)
     {
-        pid[i] = 0;
+        pid[i] = -1;
     }
 
-    for (int i = 0; i < _N + _V + _C + 1; i++)
+    for (int i = 0; i < _N + _V + _C; i++)
     {
         pid[i] = fork();
         if (pid[i] == 0){
@@ -188,7 +204,7 @@ int main(int argc, char *argv[])
     {
 
         // Wait for all the childeren=====================================
-        for (int i = 0; i < _N + _V + _C + 1 || exit_requested != 0; i++)
+        for (int i = 0; i < _N + _V + _C || exit_requested != 0; i++)
         {
             int status;
             if (waitpid(pid[i], &status, 0) == -1)
@@ -199,10 +215,10 @@ int main(int argc, char *argv[])
         }
         // =====================================Wait for all the childeren
 
-        printf("All citizens have been vaccinated.\n");
+        printf(BOLDYELLOW  "All citizens have been vaccinated.\n" RESET);
 
         for(int i = 0 ; i < _V; i++){
-            printf("%s", clinic->results[i]);
+            printf(BOLDCYAN "%s\n" RESET, clinic->results[i]);
         }
 
 
@@ -212,7 +228,6 @@ int main(int argc, char *argv[])
         sem_destroy(&clinic->sem_full);
         sem_destroy(&clinic->sem_empty);
         sem_destroy(&clinic->sem_vacc_available);
-        sem_destroy(&clinic->sem_vacc_mutex);
         shm_unlink(SHARED_LINK);
     }
 
@@ -294,6 +309,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
     int carried = 0;
     char c;
 
+    free(pid);
     
 
     if (i_fd == -1)
@@ -308,10 +324,10 @@ void nurse(char *input_file, struct ClinicData *data, int id)
         if (data->total_carried >= _T * _C * 2)
         {
             data->nurses_done++;
-            printf("Nurse %d done, carried %d vaccines.\n", id, carried);
+            printf(BOLDGREEN "Nurse %d done, carried %d vaccines.\n" RESET, id, carried);
 
             if (data->nurses_done >= _N)
-                printf("All nurses are done, carried total of %d vaccines to the clinic.\n", data->total_carried);
+                printf(BOLDGREEN "All nurses are done, carried total of %d vaccines to the clinic.\n" RESET, data->total_carried);
 
             s_post(&data->sem_full);
             s_post(&data->sem_empty);
@@ -328,7 +344,7 @@ void nurse(char *input_file, struct ClinicData *data, int id)
         if (c == '2')
             data->sputnik++;
 
-        printf("Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
+        printf(BOLDGREEN "Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
 
         data->total_carried++;
         
@@ -339,13 +355,14 @@ void nurse(char *input_file, struct ClinicData *data, int id)
         s_post(&data->sem_shm_access);
     }
 
-    free(pid);
+    
     _exit(EXIT_SUCCESS);
 }
 
 void vaccinator(struct ClinicData *data, int id)
 {
     int doses = 0;
+    free(pid);
     while (exit_requested == 0)
     {
         s_wait(&data->sem_full);
@@ -363,42 +380,43 @@ void vaccinator(struct ClinicData *data, int id)
 
         doses++;
         data->vacc_grabbed += 2;
-        printf("Vaccinator %d (pid=%d) is inviting a citizen to the clinic.\n", id, getpid());
+        printf( BOLDCYAN  "Vaccinator %d (pid=%d) is inviting a citizen to the clinic.\n" RESET, id, getpid());
         s_post(&data->sem_vacc_available);
-        //s_wait(&data->sem_vacc_mutex);
 
 
         s_post(&data->sem_shm_access);
         
     }
 
-    free(pid);
+    
     _exit(EXIT_SUCCESS);
 }
 void citizen(struct ClinicData *data, int id)
 {
     int dose_taken = 0;
+    free(pid);
     while (exit_requested == 0)
     {
         s_wait(&data->sem_vacc_available);
         s_wait(&data->sem_shm_access);
         data->pfizer--;
         data->sputnik--;
-        s_post(&data->sem_shm_access);
         s_post(&data->sem_empty);
+        s_post(&data->sem_empty);
+        s_post(&data->sem_shm_access);
+
         dose_taken++;
         if (dose_taken == _T)
         {
             data->citizens_to_vaccinate--;
-            printf("Citizen %d (pid=%d) is vaccinated for the %d. time: the clinic has %d vaccine1 and %d vaccine2. The citizen is leaving. Remaining citizens to vaccinate: %d\n", id, getpid(), dose_taken, data->pfizer, data->sputnik, data->citizens_to_vaccinate);
-            //s_post(&data->sem_vacc_mutex);
+            printf(BOLDMAGENTA "Citizen %d (pid=%d) is vaccinated for the %d. time: the clinic has %d vaccine1 and %d vaccine2. The citizen is leaving. Remaining citizens to vaccinate: %d\n" RESET, id, getpid(), dose_taken, data->pfizer, data->sputnik, data->citizens_to_vaccinate);
             break;
         }
-        printf("Citizen %d (pid=%d) is vaccinated for the %d. time: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), dose_taken, data->pfizer, data->sputnik);
-        //s_post(&data->sem_vacc_mutex);
+        printf(BOLDMAGENTA "Citizen %d (pid=%d) is vaccinated for the %d. time: the clinic has %d vaccine1 and %d vaccine2.\n" RESET, id, getpid(), dose_taken, data->pfizer, data->sputnik);
+        
     }
 
-    free(pid);
+    
     _exit(EXIT_SUCCESS);
 }
 

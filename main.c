@@ -20,23 +20,23 @@
 #define DEBUG 0
 #define SHARED_LINK "tmp_shared"
 
-#define RESET   "\033[0m"
-#define BLACK   "\033[30m"      /* Black */
-#define RED     "\033[31m"      /* Red */
-#define GREEN   "\033[32m"      /* Green */
-#define YELLOW  "\033[33m"      /* Yellow */
-#define BLUE    "\033[34m"      /* Blue */
-#define MAGENTA "\033[35m"      /* Magenta */
-#define CYAN    "\033[36m"      /* Cyan */
-#define WHITE   "\033[37m"      /* White */
-#define BOLDBLACK   "\033[1m\033[30m"      /* Bold Black */
-#define BOLDRED     "\033[1m\033[31m"      /* Bold Red */
-#define BOLDGREEN   "\033[1m\033[32m"      /* Bold Green */
-#define BOLDYELLOW  "\033[1m\033[33m"      /* Bold Yellow */
-#define BOLDBLUE    "\033[1m\033[34m"      /* Bold Blue */
-#define BOLDMAGENTA "\033[1m\033[35m"      /* Bold Magenta */
-#define BOLDCYAN    "\033[1m\033[36m"      /* Bold Cyan */
-#define BOLDWHITE   "\033[1m\033[37m"      /* Bold White */
+#define RESET "\033[0m"
+#define BLACK "\033[30m"              /* Black */
+#define RED "\033[31m"                /* Red */
+#define GREEN "\033[32m"              /* Green */
+#define YELLOW "\033[33m"             /* Yellow */
+#define BLUE "\033[34m"               /* Blue */
+#define MAGENTA "\033[35m"            /* Magenta */
+#define CYAN "\033[36m"               /* Cyan */
+#define WHITE "\033[37m"              /* White */
+#define BOLDBLACK "\033[1m\033[30m"   /* Bold Black */
+#define BOLDRED "\033[1m\033[31m"     /* Bold Red */
+#define BOLDGREEN "\033[1m\033[32m"   /* Bold Green */
+#define BOLDYELLOW "\033[1m\033[33m"  /* Bold Yellow */
+#define BOLDBLUE "\033[1m\033[34m"    /* Bold Blue */
+#define BOLDMAGENTA "\033[1m\033[35m" /* Bold Magenta */
+#define BOLDCYAN "\033[1m\033[36m"    /* Bold Cyan */
+#define BOLDWHITE "\033[1m\033[37m"   /* Bold White */
 
 //Macros
 #define errExit(msg)        \
@@ -149,6 +149,11 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    int i_fd = open(_I, O_RDONLY);
+
+    if (i_fd == -1)
+        errExit("open @nurse()");
+
     print_inputs();
 
     setbuf(stdout, NULL); // Disable stdout buffering for library functions
@@ -171,7 +176,7 @@ int main(int argc, char *argv[])
 
     clinic->citizens_to_vaccinate = _C;
 
-    printf(BOLDYELLOW   "Welcome to the GTU344 clinic. Number of citizen to vaccinate c=%d\n" RESET, _C);
+    printf(BOLDYELLOW "Welcome to the GTU344 clinic. Number of citizen to vaccinate c=%d\n" RESET, _C);
     /* Initialize semaphores */
 
     s_init(&clinic->sem_shm_access, 1);
@@ -191,11 +196,11 @@ int main(int argc, char *argv[])
     for (int i = 0; i < _N + _V + _C; i++)
     {
         pid[i] = fork();
-        if (pid[i] == 0){
+        if (pid[i] == 0)
+        {
             setbuf(stdout, NULL);
             break;
         }
-            
     }
     // ======================================== Create actor process
 
@@ -215,12 +220,12 @@ int main(int argc, char *argv[])
         }
         // =====================================Wait for all the childeren
 
-        printf(BOLDYELLOW  "All citizens have been vaccinated.\n" RESET);
+        printf(BOLDYELLOW "All citizens have been vaccinated.\n" RESET);
 
-        for(int i = 0 ; i < _V; i++){
+        for (int i = 0; i < _V; i++)
+        {
             printf(BOLDCYAN "%s\n" RESET, clinic->results[i]);
         }
-
 
         // Free resources
         free(pid);
@@ -301,6 +306,7 @@ void print_inputs(void)
 void sig_handler(int sig_no)
 {
     exit_requested = sig_no;
+    exit(EXIT_FAILURE);
 }
 
 void nurse(char *input_file, struct ClinicData *data, int id)
@@ -310,14 +316,12 @@ void nurse(char *input_file, struct ClinicData *data, int id)
     char c;
 
     free(pid);
-    
 
     if (i_fd == -1)
         errExit("open @nurse()");
 
     while (exit_requested == 0)
     {
-
         s_wait(&data->sem_empty);
         s_wait(&data->sem_shm_access);
 
@@ -347,7 +351,6 @@ void nurse(char *input_file, struct ClinicData *data, int id)
         printf(BOLDGREEN "Nurse %d (pid=%d) has brought vaccine %c: the clinic has %d vaccine1 and %d vaccine2.\n", id, getpid(), c, data->pfizer, data->sputnik);
 
         data->total_carried++;
-        
 
         if ((c == '1' && data->pfizer <= data->sputnik) || (c == '2' && data->sputnik <= data->pfizer))
             s_post(&data->sem_full);
@@ -355,7 +358,6 @@ void nurse(char *input_file, struct ClinicData *data, int id)
         s_post(&data->sem_shm_access);
     }
 
-    
     _exit(EXIT_SUCCESS);
 }
 
@@ -380,15 +382,12 @@ void vaccinator(struct ClinicData *data, int id)
 
         doses++;
         data->vacc_grabbed += 2;
-        printf( BOLDCYAN  "Vaccinator %d (pid=%d) is inviting a citizen to the clinic.\n" RESET, id, getpid());
+        printf(BOLDCYAN "Vaccinator %d (pid=%d) is inviting a citizen to the clinic.\n" RESET, id, getpid());
         s_post(&data->sem_vacc_available);
 
-
         s_post(&data->sem_shm_access);
-        
     }
 
-    
     _exit(EXIT_SUCCESS);
 }
 void citizen(struct ClinicData *data, int id)
@@ -413,10 +412,8 @@ void citizen(struct ClinicData *data, int id)
             break;
         }
         printf(BOLDMAGENTA "Citizen %d (pid=%d) is vaccinated for the %d. time: the clinic has %d vaccine1 and %d vaccine2.\n" RESET, id, getpid(), dose_taken, data->pfizer, data->sputnik);
-        
     }
 
-    
     _exit(EXIT_SUCCESS);
 }
 

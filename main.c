@@ -64,37 +64,41 @@ sig_atomic_t exit_requested = 0;
 // Shared data
 struct ClinicData
 {
-    sem_t sem_shm_access;
-    sem_t sem_full;
-    sem_t sem_empty;
-    sem_t sem_vacc_available;
+    sem_t sem_shm_access;       // For accesing this struct
+    sem_t sem_full;             // producer/consumer sem
+    sem_t sem_empty;            // producer/consumer sem
+    sem_t sem_vacc_available;   // producer/consumer sem
 
     int pfizer;
     int sputnik;
 
-    int file_index;
+    int file_index;             //file offset for pread
 
-    int nurses_done;
+    int nurses_done;    
     int total_carried;
 
     int citizens_to_vaccinate;
     int vaccinators_done;
     int vacc_grabbed;
 
-    char results[1024][60];
+    char results[1024][60];     // Result of vaccinators
 };
 
 // Function Prototypes
+
+// Valdiation and printing.
 void print_usage(void);
 void debug_printf(const char *format, ...);
 int validate_inputs(void);
 void print_inputs(void);
 void sig_handler(int sig_no);
 
+// Actors
 void nurse(char *input_file, struct ClinicData *data, int id);
 void vaccinator(struct ClinicData *data, int id);
 void citizen(struct ClinicData *data, int id);
 
+// Wrappers
 int s_wait(sem_t *sem);
 int s_post(sem_t *sem);
 int s_init(sem_t *sem, int val);
@@ -152,7 +156,7 @@ int main(int argc, char *argv[])
     int i_fd = open(_I, O_RDONLY);
 
     if (i_fd == -1)
-        errExit("open @nurse()");
+        errExit("open @main()");
 
     print_inputs();
 
@@ -229,6 +233,7 @@ int main(int argc, char *argv[])
 
         // Free resources
         free(pid);
+        close(i_fd);
         sem_destroy(&clinic->sem_shm_access);
         sem_destroy(&clinic->sem_full);
         sem_destroy(&clinic->sem_empty);
